@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>WASM CPU Matrix Multiply</title>
+    <style>
+        :root {
+            font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+            color-scheme: light dark;
+        }
+
+        body {
+            margin: 2rem;
+            max-width: 48rem;
+        }
+
+        label, button {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        button {
+            margin-left: 1rem;
+        }
+
+        pre {
+            background: rgba(0, 0, 0, 0.05);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Matrix Multiply in WebAssembly</h1>
+    <div>
+        <button id="runOnCpu">Run multiply on CPU</button>
+        <button id="runOnGpu">Run multiply on GPU</button>
+    </div>
+    <pre id="output">Ready.</pre>
+
+    <script type="module">
+        import init, { Matrix, GpuCtx } from "./pkg/wasm_cpu.js";
+
+        await init();
+        let gpuCtx;
+
+        const sizeInput = document.getElementById("size");
+        const runOnCpuButton = document.getElementById("runOnCpu");
+        const runOnGpuButton = document.getElementById("runOnGpu");
+        const output = document.getElementById("output");
+
+        function fillMatrix(n) {
+            const data = new Float32Array(n * n);
+            for (let i = 0; i < data.length; i += 1) {
+                data[i] = Math.random();
+            }
+            return data;
+        }
+
+        runOnCpuButton.addEventListener("click", async () => {
+            runOnCpuButton.disabled = true;
+            output.textContent = "Running...";
+
+            try {
+                const n = 1000;
+
+                const left = fillMatrix(n);
+                const right = fillMatrix(n);
+                const matrixA = new Matrix();
+                const matrixB = new Matrix();
+                const matrixC = new Matrix();
+                matrixA.fill(left);
+                matrixB.fill(right);
+
+                const t0 = performance.now();
+                matrixC.matmul(matrixA, matrixB);
+                const elapsedMs = performance.now() - t0;
+
+                let checksum = 0;
+                const result = matrixC.read();
+                for (let i = 0; i < result.length; i += 1) {
+                    checksum += result[i];
+                }
+
+                output.textContent = `n = ${n}\n` +
+                    `elapsed = ${elapsedMs.toFixed(3)} ms\n` +
+                    `checksum = ${checksum.toFixed(6)}`;
+            } catch (error) {
+                output.textContent = `Error: ${error.message ?? error}`;
+                console.error(error);
+            } finally {
+                runOnCpuButton.disabled = false;
+            }
+        });
+
+        runOnGpuButton.addEventListener("click", async () => {
+            runOnGpuButton.disabled = true;
+            output.textContent = "Running...";
+
+            try {
+                if (!gpuCtx) {
+                    gpuCtx = await GpuCtx.new();
+                }
+                const n = 1000;
+
+                const left = fillMatrix(n);
+                const right = fillMatrix(n);
+                const matrixA = new Matrix();
+                const matrixB = new Matrix();
+                const matrixC = new Matrix();
+                matrixA.fill(left);
+                matrixB.fill(right);
+
+                const t0 = performance.now();
+                await gpuCtx.matmul(matrixC, matrixA, matrixB, 1000);
+                const elapsedMs = (performance.now() - t0) / 1000;
+
+                let checksum = 0;
+                const result = matrixC.read();
+                for (let i = 0; i < result.length; i += 1) {
+                    checksum += result[i];
+                }
+
+                output.textContent = `n = ${n}\n` +
+                    `elapsed = ${elapsedMs.toFixed(3)} ms\n` +
+                    `checksum = ${checksum.toFixed(6)}`;
+            } catch (error) {
+                output.textContent = `Error: ${error.message ?? error}`;
+                console.error(error);
+            } finally {
+                runOnGpuButton.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
